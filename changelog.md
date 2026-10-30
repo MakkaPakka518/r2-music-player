@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 — 2026-10-30
+
+**修复:大文件播放缓冲/卡住(生产环境实测)**
+
+- 播放流响应 `Cache-Control` 由 `public, max-age=86400` 改为 `private, max-age=86400`:实测部署后 4.9MB mp3 缓冲 1 分钟无法播放,根因是 `public` 令 Cloudflare 边缘共享缓存介入 R2 流式响应,大文件首请求 pending(社区经典问题,CF 官方 2026-10 发布 Origin Range Requests 才在缓存层优化);`private` 仅允许浏览器本地缓存、禁止边缘缓存,保证音频流直达
+- 播放响应补充 Content-Type 兜底(对象缺 contentType 元数据时按扩展名回填)
+- 校验:ESM 语法 + mock 路由 23 项全通过 + 响应头断言(200/206 均 `cache-control: private`、`content-type: audio/mpeg`)
+
 ## 1.0.0 — 2026-10-30
 
 **首个版本:R2 在线小型播放器**

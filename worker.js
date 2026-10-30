@@ -14,7 +14,7 @@
  *  - 本地持久化播放列表(IndexedDB),播放进度自动记忆
  */
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 
 const AUDIO_EXTS = ['mp3', 'm4a', 'flac', 'ogg', 'oga', 'wav', 'aac', 'opus', 'weba'];
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MiB
@@ -577,7 +577,10 @@ export default {
         object.writeHttpMetadata(headers);
         headers.set('etag', object.httpEtag);
         headers.set('accept-ranges', 'bytes');
-        headers.set('cache-control', 'public, max-age=86400');
+        // 重要:禁止边缘共享缓存(public 会让 CF 缓存层介入 R2 流式响应,
+        // 导致大文件首请求 pending/缓冲;private 仅允许浏览器本地缓存)
+        headers.set('cache-control', 'private, max-age=86400');
+        if (!headers.has('content-type')) headers.set('content-type', contentTypeFor(name));
         if (range && object.range) {
           headers.set('content-range', 'bytes ' + object.range.offset + '-' + object.range.end + '/' + object.size);
           return new Response(object.body, { status: 206, headers });
