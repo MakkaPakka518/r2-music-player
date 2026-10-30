@@ -38,7 +38,8 @@ function contentTypeFor(name) {
 
 function safeKey(name) {
   // 仅保留安全文件名字符,拒绝路径穿越
-  let n = decodeURIComponent(name).replace(/[\\\/\0]/g, '').trim();
+  // 注意:调用方已经解码过一次,这里不能再 decode(否则含 % 的文件名会出错)
+  let n = String(name).replace(/[\\\/\0]/g, '').trim();
   if (!n) return null;
   return n;
 }
@@ -401,9 +402,16 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:18px}
     audio.play().catch(function(){});
     pName.textContent=f.name;
     pSub.textContent='正在缓冲…';
-    // 记忆播放进度
-    var p=lastPos[name];if(p&&p>3&&p<f.dur-5){try{audio.currentTime=p}catch(e){}}
+    // 记忆播放进度:等元数据加载完再跳转(此时设置 currentTime 无效)
+    resumeAt=lastPos[name]||0;
   }
+  var resumeAt=0;
+  audio.addEventListener('loadedmetadata',function(){
+    if(resumeAt>3&&resumeAt<audio.duration-5){try{audio.currentTime=resumeAt}catch(e){}}
+    resumeAt=0;
+  });
+  audio.addEventListener('canplay',function(){if(playing&&!audio.paused)pSub.textContent='播放中'});
+  audio.addEventListener('error',function(){if(playing){pSub.textContent='加载失败';toast('音频加载失败',1)}});
   function toggle(){if(!playing&&list.length){play(list[0].name);return}if(audio.paused){audio.play().catch(function(){})}else{audio.pause()}}
   function step(dir){
     if(!list.length)return;
@@ -570,21 +578,45 @@ export default {
         let name;
         try { name = safeKey(decodeURIComponent(raw)); } catch (e) { name = safeKey(raw); }
         if (!name) return new Response('Not Found', { status: 404 });
-        const range = request.headers.get('Range');
-        const object = await bucket.get(name, range ? { range } : undefined);
-        if (!object) return new Response('Not Found', { status: 404 });
+        const head = await bucket.head(name);
+        if (!head) return new Response('Not Found', { status: 404 });
+        const size = head.size;
+
         const headers = new Headers();
-        object.writeHttpMetadata(headers);
-        headers.set('etag', object.httpEtag);
+        head.writeHttpMetadata(headers);
+        headers.set('etag', head.httpEtag);
         headers.set('accept-ranges', 'bytes');
-        // 重要:禁止边缘共享缓存(public 会让 CF 缓存层介入 R2 流式响应,
-        // 导致大文件首请求 pending/缓冲;private 仅允许浏览器本地缓存)
         headers.set('cache-control', 'private, max-age=86400');
-        if (!headers.has('content-type')) headers.set('content-type', contentTypeFor(name));
-        if (range && object.range) {
-          headers.set('content-range', 'bytes ' + object.range.offset + '-' + object.range.end + '/' + object.size);
+        // 统一使用按扩展名推断的音频类型,避免 octet-stream 导致浏览器不播放
+        headers.set('content-type', contentTypeFor(name));
+
+        // 解析 Range: bytes=start-end | bytes=start- | bytes=-suffix
+        const rangeHeader = request.headers.get('Range');
+        const m = rangeHeader && rangeHeader.match(/^bytes=(\d*)-(\d*)$/i);
+        if (m && (m[1] !== '' || m[2] !== '')) {
+          let start, end;
+          if (m[1] === '') {                       // 后缀区间:最后 N 字节
+            const suffix = Math.min(Number(m[2]), size);
+            start = size - suffix;
+            end = size - 1;
+          } else {
+            start = Number(m[1]);
+            end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+          }
+          if (size === 0 || start >= size || start > end) {
+            return new Response(null, { status: 416, headers: { 'content-range': 'bytes */' + size } });
+          }
+          const length = end - start + 1;
+          const object = await bucket.get(name, { range: { offset: start, length } });
+          if (!object) return new Response('Not Found', { status: 404 });
+          headers.set('content-range', 'bytes ' + start + '-' + end + '/' + size);
+          headers.set('content-length', String(length));
           return new Response(object.body, { status: 206, headers });
         }
+
+        const object = await bucket.get(name);
+        if (!object) return new Response('Not Found', { status: 404 });
+        headers.set('content-length', String(size));
         return new Response(object.body, { status: 200, headers });
       }
 
