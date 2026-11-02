@@ -1,6 +1,30 @@
 # R2 Music · Cloudflare R2 在线小型播放器
 
-配合 Cloudflare R2 的在线音乐播放器。**单文件 Worker**:前端播放器与后端接口全部内嵌在 `worker.js`,粘贴到 Cloudflare Dashboard 即可部署,不依赖任何框架、数据库或第三方服务。
+配合 Cloudflare R2 的在线音乐播放器，现支持 **TGDrive 音频来源 + D1 歌曲元数据**。源码共享模块可构建为单文件 Worker，原有 R2 歌曲和站点数据继续使用。
+
+## TGDrive 音频来源（2.2.0）
+
+- 复用已有 TGDrive 后端，无需再部署第二套 Telegram 服务。
+- 管理员从已有网盘来源中搜索、分页选择音频，并分批导入音乐库；视频在浏览、导入和播放阶段均被拒绝。
+- 歌曲名、艺术家、专辑名、自定义海报链接及上传的海报图片保存到 D1。
+- 海报沿用原有上传编辑入口，自动压缩；TG 海报最大512KiB，图片二进制直接保存D1。
+- 播放时获取新的签名地址，音频直接从 TGDrive 流向浏览器，不复制到 R2，也不把临时链接存进数据库。
+- TG歌曲可与R2歌曲一起加入歌单、按专辑浏览、编辑歌词和批量修改专辑。删除TG歌曲只移除音乐库引用，不删除Telegram消息。
+
+配置方法见 [TGDrive 接入文档](docs/tgdrive.md)。
+
+### 构建
+
+```bash
+npm ci
+npm test
+npm run build
+```
+
+- 普通版单文件：`dist/worker.js`
+- 拾音主题版单文件：`dist/zt-worker.js`
+
+将构建产物粘贴到 Cloudflare Dashboard，或使用 Wrangler 部署对应源码入口。`worker.js` 和 `zt/worker.js` 现在引用共享模块，不能只复制这两个源码文件。
 
 - **存储**:音频文件存 R2,免费额度 10GB / 月,流量(出口)免费
 - **播放**:在线播放与进度条拖动(Range 206)、上一首/下一首、播放进度记忆、键盘快捷键(空格/←/→)
@@ -27,7 +51,7 @@
    - 类型:**R2 存储桶**
    - 变量名称:**`MUSIC_BUCKET`**(必须与代码一致)
    - 存储桶:选择刚才创建的桶
-3. **编辑代码** → 清空 → 粘贴 `worker.js` 全部内容 → **保存并部署**
+3. **编辑代码** → 清空 → 粘贴构建得到的 `dist/worker.js` 全部内容 → **保存并部署**
 
 ### 3. (可选)配置管理令牌
 
@@ -49,7 +73,10 @@ Worker → **设置** → **变量和机密** → **添加**:
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/` | 播放器页面 |
-| GET | `/api/list` | 音频文件列表(`{files:[{name,size,uploaded,title,artist,album,cover}],order,version}`) |
+| GET | `/api/list` | 合并R2和已导入TG歌曲的列表(`{files:[{name,size,uploaded,title,artist,album,cover}],order,version}`) |
+| GET | `/api/tgdrive/sources` | TGDrive音频来源列表（需管理令牌） |
+| GET | `/api/tgdrive/catalog` | 搜索/分页浏览TG音频（需管理令牌） |
+| POST | `/api/tgdrive/import` | 将选中的TG音频导入D1（需管理令牌） |
 | POST | `/api/upload?name=文件名` | 上传音频(raw body;≤50MB;需令牌) |
 | GET | `/api/file/<name>` | 流式播放,支持 `Range` 请求(206) |
 | DELETE | `/api/file/<name>` | 删除文件(需令牌) |
@@ -66,17 +93,17 @@ Worker → **设置** → **变量和机密** → **添加**:
 - R2 免费层:10GB 存储 / 月,出口流量免费,A 类操作 100 万次 / 月,B 类操作 1000 万次 / 月,超出按量计费
 - 单文件上传上限 50MB(Worker 请求体限制),可自行修改 `MAX_UPLOAD_BYTES`
 - 上传同名文件会覆盖旧文件
-- 播放列表实时读 R2,无需后端存储;播放进度与播放列表在浏览器本地(IndexedDB)记忆
+- 原有歌曲实时读R2，TG歌曲元数据读D1；播放进度与播放列表在浏览器本地(IndexedDB)记忆
 - 歌曲封面、站点 logo/背景图等附加资源同样存于 R2 桶内(以约定 key 前缀存储)
 
 ## 四、开发
 
 ```bash
-# 语法校验(CF Worker 为 ESM,需复制为 .mjs 再 check)
-cp worker.js /tmp/check.mjs && node --check /tmp/check.mjs
-
-# 路由逻辑 mock 测试(内存 R2,无需真实桶)
-node /tmp/r2m-mock-test.mjs
+npm ci
+npm test
+npm run build
+npx playwright install --with-deps chromium
+npm run test:browser
 ```
 
 ## 五、版本

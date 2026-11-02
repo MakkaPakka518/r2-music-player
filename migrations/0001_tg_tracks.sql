@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS tg_tracks (
+    name TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    message_id INTEGER NOT NULL,
+    original_name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL DEFAULT 0,
+    duration REAL NOT NULL DEFAULT 0,
+    uploaded TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    album TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    cover_data BLOB,
+    cover_type TEXT NOT NULL DEFAULT '',
+    cover_version INTEGER NOT NULL DEFAULT 0,
+    has_artwork INTEGER NOT NULL DEFAULT 0,
+    lrc TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(source_id, message_id)
+);

@@ -1,0 +1,8 @@
+{
+  "name": "r2-music-player",
+  "main": "zt/worker.js",
+  "compatibility_date": "2026-10-30",
+  "r2_buckets": [{ "binding": "MUSIC_BUCKET", "bucket_name": "YOUR_MUSIC_BUCKET" }],
+  "d1_databases": [{ "binding": "MUSIC_DB", "database_name": "music-metadata", "database_id": "REPLACE_WITH_DATABASE_ID", "migrations_dir": "migrations" }],
+  "vars": { "TGDRIVE_URL": "https://api.example.com/tgdrive-api" }
+}

@@ -2,7 +2,7 @@
  * R2 Music Player — 配合 Cloudflare R2 的在线小型播放器
  * 单文件 Worker:粘贴到 Cloudflare Dashboard 即可部署
  *
- * 版本:2.0.0
+ * 版本:2.2.0（TGDrive音频 + D1元数据，运行 npm run build 生成单文件）
  * 新增:仅播放时显示底栏;封面进入黑胶播放页;播放旋转/暂停停转;R2 自定义背景
  * 背景设置:管理员 → 站点设置 → 黑胶播放页背景,保存后所有设备共用
  * 绑定:R2 bucket 命名为 MUSIC_BUCKET(在 Worker 设置 → 绑定 → R2 中添加)
@@ -17,7 +17,10 @@
  *  - 音频信息提取、批量管理、睡眠定时、桌面应用
  */
 
-const VERSION = '2.0.0';
+import { routeTGDrive, listTGTracks } from './tgdrive/backend.js';
+import { TG_CLIENT_JS } from './tgdrive/client.js';
+
+const VERSION = '2.2.0';
 
 const AUDIO_EXTS = ['mp3', 'm4a', 'flac', 'ogg', 'oga', 'wav', 'aac', 'opus', 'weba'];
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MiB
@@ -979,6 +982,7 @@ body.now-open .queue .ql{min-height:0}
   function load(){
     fetch('/api/list').then(function(r){return r.json()}).then(function(d){
       list=d.files||[];order=d.order||[];
+      if(d.tg_error)toast(d.tg_error,1);
       map=Object.create(null);list.forEach(function(f){map[f.name]=f});
       plusEvent('loaded');
       if(albumOpen!==null&&!list.some(function(f){return (f.album||'')===albumOpen}))albumOpen=null;
@@ -1427,6 +1431,7 @@ body.now-open .queue .ql{min-height:0}
     $('eAlbum').value=f.album||'';
     fillDatalist('artistList','artist');fillDatalist('albumList','album');
     showCover(f.cover);
+    tgEditSetup(f);
     $('editModal').classList.add('show');
   }
   cvBox.addEventListener('click',function(){cvInput.click()});
@@ -1437,7 +1442,8 @@ body.now-open .queue .ql{min-height:0}
     if(!file)return;
     if(file.type.indexOf('image/')!==0){toast('请选择图片文件',1);return}
     shrink(file,function(b){
-      if(b.size>5*1024*1024){toast('封面过大(>5MB)',1);return}
+      var maximum=map[editTarget]&&map[editTarget].source==='tgdrive'?512*1024:5*1024*1024;
+      if(b.size>maximum){toast(maximum===512*1024?'D1海报上限512KiB，请缩小图片':'封面过大(>5MB)',1);return}
       pendingCover=b;removeCover=false;showCover(URL.createObjectURL(b));
     });
   });
@@ -1445,7 +1451,7 @@ body.now-open .queue .ql{min-height:0}
   $('btnEditOk').addEventListener('click',function(){
     if(!editTarget)return;
     var enc=encodeURIComponent(editTarget);
-    var meta=JSON.stringify({title:$('eTitle').value,artist:$('eArtist').value,album:$('eAlbum').value});
+    var meta=JSON.stringify(tgEditMetadata(editTarget,{title:$('eTitle').value,artist:$('eArtist').value,album:$('eAlbum').value}));
     api('PUT','/api/meta/'+enc,meta,'application/json').then(function(){
       if(pendingCover)return api('POST','/api/cover/'+enc,pendingCover,pendingCover.type||'image/jpeg');
       if(removeCover)return api('DELETE','/api/cover/'+enc);
@@ -1454,6 +1460,8 @@ body.now-open .queue .ql{min-height:0}
       toast('已保存');load();
     }).catch(function(e){toast('保存失败:'+e.message,1)});
   });
+
+  ${TG_CLIENT_JS}
 
   // ---------- 主题(深色 / 浅色) ----------
   var THEME_ICONS={
@@ -3246,6 +3254,8 @@ export default {
     const bucket = env.MUSIC_BUCKET;
 
     try {
+      const tgResponse = await routeTGDrive(request, env, url, { authorized, readLimitedBody, legacyBatch: routeManage });
+      if (tgResponse) return tgResponse;
       for (const route of [routeApp,routeLyricsAppearance,routeManage]) { const response=await route(request,env,url); if(response) return response; }
       // 页面
       if (request.method === 'GET' && path === '/') {
@@ -3376,7 +3386,10 @@ export default {
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
-        return new Response(JSON.stringify({ files, order, version: VERSION }), {
+        let tgError = '';
+        try { files.push(...await listTGTracks(env)); } catch (_) { tgError = 'TG歌曲数据库暂时不可用'; }
+        files.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+        return new Response(JSON.stringify({ files, order, version: VERSION, ...(tgError ? { tg_error: tgError } : {}) }), {
           headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
         });
       }
