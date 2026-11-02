@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 import { environment, fakeUpstream, wave, SOURCE } from './helpers.mjs';
 
 const listen = async handler => {
@@ -12,13 +12,15 @@ async function send(response, output) {
   output.writeHead(response.status, Object.fromEntries(response.headers));
   output.end(Buffer.from(await response.arrayBuffer()));
 }
-const browser = await chromium.launch({ headless: true });
+const useWebKit = process.argv.includes('--webkit');
+const longPlayback = process.argv.includes('--long-playback');
+const browser = await (useWebKit ? webkit : chromium).launch({ headless: true });
 try {
   for (const variant of ['worker', 'zt-worker']) {
     const worker = (await import('../dist/' + variant + '.js')).default;
     const env = await environment();
     let mediaRequests = 0;
-    const pcm = wave();
+    const pcm = wave(longPlayback ? 90 : 20);
     const backend = await listen(async (req, res) => {
       try {
         const url = new URL(req.url, backend.origin);
@@ -33,7 +35,10 @@ try {
         }
         const response = await fakeUpstream(url.href, { headers: { Authorization: req.headers.authorization } });
         const data = await response.json();
-        if (data.stream_url) data.stream_url = backend.origin + new URL(data.stream_url).pathname + '?exp=1&sig=test';
+        if (data.stream_url) {
+          data.stream_url = backend.origin + new URL(data.stream_url).pathname + '?exp=1&sig=test';
+          data.size = pcm.length; data.duration = longPlayback ? 90 : 20;
+        }
         await send(Response.json(data, { status: response.status }), res);
       } catch { res.writeHead(500); res.end('fixture failure'); }
     });
@@ -88,11 +93,26 @@ try {
       await page.locator('.track[data-name="' + name + '"] .name').click();
       await page.waitForFunction(() => window.__testAudio.some(audio => !audio.paused && audio.currentTime > 0.1), null, { timeout: 15000 });
       assert.ok(mediaRequests > 0);
+      if (longPlayback) {
+        await page.waitForFunction(() => window.__testAudio[0].currentTime > 35, null, { timeout: 45000 });
+        assert.ok(await page.evaluate(() => window.__testAudio[0].src.includes('tgdrive_')));
+      }
+      await page.evaluate(async () => {
+        const audio = window.__testAudio[0];
+        if (!audio.paused) await new Promise(resolve => { audio.addEventListener('pause', resolve, { once: true }); audio.pause(); });
+        audio.dispatchEvent(new Event('ended'));
+      });
+      assert.ok(await page.evaluate(() => window.__testAudio[0].src.includes('tgdrive_')), 'Premature ended must not skip the current TG song');
+      assert.match(await page.locator('#pSub').textContent(), /提前结束/);
+      await page.locator('.track[data-name="' + name + '"] .name').click();
+      await page.waitForFunction(() => !window.__testAudio[0].paused && window.__testAudio[0].readyState >= 2);
+      await page.evaluate(() => { const audio = window.__testAudio[0]; audio.currentTime = audio.duration - 0.25; });
+      await page.waitForFunction(() => window.__testAudio[0].src.includes('original.mp3'), null, { timeout: 10000 });
       assert.ok(env.MUSIC_BUCKET.objects.has('original.mp3'));
       assert.equal((await (await env.MUSIC_BUCKET.get('_site.json')).json()).name, 'Existing site');
       assert.deepEqual(errors, []);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      console.log(variant + ': TG audio import, D1 title/album/poster editing and redirected audio playback passed');
+      console.log(variant + ': import/edit/playback, premature-end guard and normal next-track passed (' + (useWebKit ? 'WebKit' : 'Chromium') + (longPlayback ? ', sustained playback' : '') + ')');
     } finally {
       await context.close();
       app.server.closeAllConnections(); backend.server.closeAllConnections();

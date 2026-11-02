@@ -78,8 +78,9 @@ export function request(path, method = 'GET', data, admin = false) {
     body: data === undefined ? undefined : JSON.stringify(data),
   });
 }
-export function wave() {
-  const data = Buffer.alloc(44 + 320000);
-  data.write('RIFF'); data.writeUInt32LE(data.length - 8, 4); data.write('WAVEfmt ', 8); data.writeUInt32LE(16, 16); data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22); data.writeUInt32LE(8000, 24); data.writeUInt32LE(16000, 28); data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34); data.write('data', 36); data.writeUInt32LE(320000, 40);
+export function wave(seconds = 20) {
+  const length = seconds * 16000;
+  const data = Buffer.alloc(44 + length);
+  data.write('RIFF'); data.writeUInt32LE(data.length - 8, 4); data.write('WAVEfmt ', 8); data.writeUInt32LE(16, 16); data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22); data.writeUInt32LE(8000, 24); data.writeUInt32LE(16000, 28); data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34); data.write('data', 36); data.writeUInt32LE(length, 40);
   return data;
 }

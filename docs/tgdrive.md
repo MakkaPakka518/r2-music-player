@@ -66,3 +66,13 @@ npm run build
 音乐列表不会保存即将过期的播放地址。每次播放会从TGDrive获取新的音频专用签名，然后让浏览器直连后端；Range拖动与标签读取通过后端CORS配置支持。
 
 音乐Worker和后端都会检查音频类型，视频不能导入或通过音乐接口播放。移除音乐库中的TG歌曲不会删除Telegram原始消息或TGDrive索引。
+
+## 持续播放检查
+
+后端会将浏览器任意字节范围对齐到Telegram下载分块，再裁剪为请求范围，避免Safari/WebKit续读时音频流提前截断。升级2.2.1时应同时更新TGDrive后端。
+
+```bash
+npm run build
+npx playwright install --with-deps webkit
+node tests/browser.mjs --webkit --long-playback
+```

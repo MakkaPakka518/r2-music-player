@@ -2,7 +2,7 @@
  * R2 Music Player — 配合 Cloudflare R2 的在线小型播放器
  * 单文件 Worker:粘贴到 Cloudflare Dashboard 即可部署
  *
- * 版本:2.2.0（TGDrive音频 + D1元数据，运行 npm run build 生成单文件）
+ * 版本:2.2.1（TGDrive音频 + D1元数据，运行 npm run build 生成单文件）
  * 新增:仅播放时显示底栏;封面进入黑胶播放页;播放旋转/暂停停转;R2 自定义背景
  * 背景设置:管理员 → 站点设置 → 黑胶播放页背景,保存后所有设备共用
  * 绑定:R2 bucket 命名为 MUSIC_BUCKET(在 Worker 设置 → 绑定 → R2 中添加)
@@ -20,7 +20,7 @@
 import { routeTGDrive, listTGTracks } from './tgdrive/backend.js';
 import { TG_CLIENT_JS } from './tgdrive/client.js';
 
-const VERSION = '2.2.0';
+const VERSION = '2.2.1';
 
 const AUDIO_EXTS = ['mp3', 'm4a', 'flac', 'ogg', 'oga', 'wav', 'aac', 'opus', 'weba'];
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MiB
@@ -1190,6 +1190,7 @@ body.now-open .queue .ql{min-height:0}
   }
   function qFiles(){return queue.map(function(n){return map[n]}).filter(Boolean)}
   function toggle(){
+    if(playing&&playFailed&&map[playing]&&map[playing].source==='tgdrive'){play(playing);return}
     if(!playing&&list.length){var v=visibleNames();if(v.length)play(v[0],v);return}
     if(audio.paused){startAudio()}else{audio.pause()}
   }
@@ -1226,7 +1227,7 @@ body.now-open .queue .ql{min-height:0}
     if(playing){pSub.textContent='已暂停';if(isFinite(audio.duration)&&audio.duration>0)lastPos[playing]=audio.currentTime||0}
     syncPlayback();
   });
-  audio.addEventListener('ended',function(){if(playing)lastPos[playing]=0;if(sleepOnEnded())return;syncPlayback();step(1)});
+  audio.addEventListener('ended',function(){if(tgHandlePrematureEnd())return;if(playing)lastPos[playing]=0;if(sleepOnEnded())return;syncPlayback();step(1)});
   audio.addEventListener('waiting',function(){buffering=true;if(playing)pSub.textContent='缓冲中…';syncPlayback()});
   audio.addEventListener('canplay',function(){if(playing&&!audio.paused){buffering=false;pSub.textContent='播放中'}syncPlayback()});
   audio.addEventListener('emptied',function(){buffering=true;syncProgress();syncPlayback()});

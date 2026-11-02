@@ -1,5 +1,12 @@
 // Runs inside the existing player closure, reusing its editor, auth and playlists.
 export const TG_CLIENT_JS = String.raw`
+  function tgHandlePrematureEnd(){
+    var file=map[playing],expected=Number(file&&file.duration),position=audio.currentTime;
+    if(!file||file.source!=='tgdrive'||!isFinite(expected)||expected<=0||position>=expected-Math.max(3,Math.min(10,expected*0.02)))return false;
+    lastPos[playing]=Math.max(0,position||0);buffering=false;playFailed=true;
+    pSub.textContent='音频连接提前结束，请点击歌曲继续';syncPlayback();
+    toast('音频尚未播完，请点击当前歌曲重试',1);return true;
+  }
   var tgPickerPage=1,tgPickerGeneration=0,tgPickerRows=[],tgPicked=new Map(),tgSearchTimer=null;
   var tgStyle=document.createElement('style');
   tgStyle.textContent='.tgdr-entry{display:none;margin:0 0 14px;width:100%}body.admin .tgdr-entry{display:block}.tgdr-modal{z-index:130}.tgdr-controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tgdr-controls input{flex:1;min-width:150px}.tgdr-controls select{max-width:100%;width:100%;min-height:40px;border-radius:10px;background:var(--panel2);color:var(--txt);border:1px solid var(--hair2);padding:8px}.tgdr-results{max-height:42vh;overflow:auto}.tgdr-row{padding:10px 0;border-top:1px solid var(--hair);display:flex;align-items:center;gap:10px}.tgdr-row input[type=checkbox]{width:18px;height:18px;flex-shrink:0}.tgdr-copy{flex:1;min-width:0}.tgdr-copy input{width:100%;font-size:13px}.tgdr-copy small{display:block;font-size:11px;color:var(--dim);overflow-wrap:anywhere;margin-top:5px}.tgdr-pagination{display:flex;justify-content:center;align-items:center;gap:9px;margin:12px 0;font-size:12px}.tgdr-status{white-space:pre-wrap;overflow-wrap:anywhere}';
